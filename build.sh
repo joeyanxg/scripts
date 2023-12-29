@@ -1,9 +1,10 @@
 #!/bin/bash
-
 cd "$(dirname $0)"
 TOP="${PWD}"
 OUT_DIR="$TOP/out/target/product/aiot8365p2_64_bsp"
 PKG="$TOP/pkg"
+LOGO_BUILD="$TOP/bootable/bootloader/lk/build/dev/logo/wxga"
+
 function ceil(){
 floor=`echo "scale=0;$1/1"|bc -l ` # 向下取整
 add=`awk -v num1=$floor -v num2=$1 'BEGIN{print(num1<num2)?"1":"0"}'`
@@ -51,7 +52,9 @@ function calculate(){
 		fi
 	fi
 }
+
 time_start=$(date "+%Y-%m-%d %H:%M:%S")
+
 cd $TOP
 source build/envsetup.sh
 lunch full_aiot8365p2_64_bsp-userdebug
@@ -93,15 +96,47 @@ else
 	exit 1
 fi
 
+echo "build logo.bin start!!!"
+cd $TOP/bootable/bootloader/lk
+if [ ! -e $LOGO_BUILD ];then
+	mkdir $LOGO_BUILD -p
+else
+	echo "$LOGO_BUILD already exist!"
+fi
+make
+if [ $? == 0 ];then
+	echo "make logo.bin success!"
+else
+	echo "make logo.bin failed!"
+	exit 1
+fi
+
+BOARD_AVB_ENABLE=true python scripts/sign-image_v2/sign_flow.py -target logo.bin -env_cfg scripts/sign-image_v2/env.cfg mt8168 aiot8365p2_64_bsp
+if [ $? == 0 ];then
+	echo "sig logo.bin success!"
+else
+	echo "sig logo.bin failed!"
+	exit 1
+fi
+cp -rf $TOP/bootable/bootloader/lk/build/logo* $PKG
+rm -rf $TOP/bootable/bootloader/lk/build
+cd -
+
 echo "package otapkg start!!!"
-mkdir -p $TOP/ota 
+if [ ! -e $TOP/ota ];then
+	mkdir $TOP/ota -p
+else
+	echo "$TOP/ota already exist!"
+fi
 cp $OUT_DIR/full_aiot8365p2_64_bsp-target_files-eng.xiaoguang.zip $TOP/ota/target-eng.zip
 if [ $? == 0 ];then
 	mkdir -p $TOP/ota/IMAGES/
 	cp $PKG/system.img $TOP/ota/IMAGES/ -rf
+	cp $PKG/logo-verified.bin $TOP/ota/IMAGES/logo.bin -rf
 	#zip -qrym $TOP/ota/target-eng.zip $TOP/ota/
 	cd $TOP/ota/
 	zip -u target-eng.zip IMAGES/system.img
+	zip -u target-eng.zip IMAGES/logo.bin
 	rm $TOP/ota/IMAGES/ -rf
 	$TOP/build/tools/releasetools/ota_from_target_files --block -p $TOP/out/host/linux-x86/ -k $TOP/build/target/product/security/testkey -v $TOP/ota/target-eng.zip  $TOP/ota/ota_update.zip
 	if [ $? == 0 ];then
@@ -121,3 +156,4 @@ time_end=$(date "+%Y-%m-%d %H:%M:%S")
 time=$(($(date +%s -d "${time_end}")-$(date +%s -d "${time_start}")));
 result=$(calculate $time)
 echo "##### $result #####"
+

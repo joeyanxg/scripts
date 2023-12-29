@@ -3,15 +3,18 @@
 cd "$(dirname $0)"
 #cd ../..
 TOP="${PWD}"
-TARGET_BASE="remac_release1127"
-PACK_NAME="CodeRelease1127"
-MAKESOURCE="remac1011/mtk_git"
+#-------------------------check below var whether need modify--------------------------
+TARGET_BASE="remac_release_test1228"
+PACK_NAME="CodeReleaseTest1228"
+MAKESOURCE="remac-rtc/mtk_git"
+PROJECT="aiot8365p2_64_bsp"
+SERVER_USER="xiaoguang"
+#--------------------------------------------------------------------------------------
+OTA_TARGET_NAME="full_$PROJECT-target_files-eng.$SERVER_USER"
 SOURCE="$TOP/$MAKESOURCE"
-SOURCE_OUT="$SOURCE/out/target/product/aiot8365p2_64_bsp/"
+SOURCE_OUT="$SOURCE/out/target/product/$PROJECT/"
 TARGET="$TOP/$TARGET_BASE"
-TARGET_OUT="$TARGET/out/target/product/aiot8365p2_64_bsp/"
-
-OUT_DIR="$TOP/out/target/product/aiot8365p2_64_bsp"
+TARGET_OUT="$TARGET/out/target/product/$PROJECT/"
 PKG="$TOP/pkg"
 function ceil(){
 floor=`echo "scale=0;$1/1"|bc -l ` # 向下取整
@@ -85,7 +88,14 @@ function Copy_out(){
 	cp $SOURCE_OUT/root $TARGET_OUT/ -rf
 	cp $SOURCE_OUT/system $TARGET_OUT/ -rf
 	cp $SOURCE/out/host/linux-x86/bin/brotli $TARGET/out/host/linux-x86/bin/
-	cp $SOURCE/out/dist/full_aiot8365p2_64_bsp-target_files-eng.xiaoguang.zip $TARGET_OUT -rf
+	cp $SOURCE/out/dist/$OTA_TARGET_NAME.zip $TARGET_OUT -rf
+	mkdir -p $TARGET_OUT/OTA
+	cp $SOURCE_OUT/ota_update_list.txt $TARGET_OUT/OTA/ -rf
+	cd $TARGET_OUT
+	sed -i '4a\logo.bin logo' OTA/ota_update_list.txt
+	zip -u $OTA_TARGET_NAME.zip OTA/ota_update_list.txt
+	cd $TARGET
+	rm $TARGET_OUT/OTA -rf
 }
 
 function Copy_full(){
@@ -118,6 +128,9 @@ function Copy_full(){
 	cp $SOURCE/system/extras/ext4_utils/mke2fs.conf $TARGET/system/extras/ext4_utils/
 	mkdir $TARGET/system/update_engine -p
 	cp $SOURCE/system/update_engine/scripts $TARGET/system/update_engine/ -rf
+	################copy bootable & build.sh####################
+	cp $TOP/bootable $TARGET/ -rf
+	cp $TOP/build.sh $TARGET/
 }
 
 function Update(){
@@ -147,7 +160,7 @@ function Update(){
 
 	#Copy_full
 
-	make dist -j64 2>&1 | tee makeDist-$date.log
+	make dist -j32 2>&1 | tee makeDist-$time_start.log
 	if [ $? == 0 ];then
 		echo "make dist success!"
 	else
@@ -155,16 +168,12 @@ function Update(){
 		exit 1
 	fi
 
+	echo "Copying files, please wait..."
 	Copy_full
-
-	cd $TARGET
-
-	cp $TOP/build.sh $TARGET/
-
+	
 	bash build.sh
-
 	if [ $? == 0 ];then
-		echo "build.sh exec success!"
+		echo "build.sh exec success! cleaning out..."
 		rm $TARGET/out -rf
 		Copy_out
 	else
@@ -178,13 +187,16 @@ function Update(){
 	echo "updateRelease success!##### $result #####"
 	
 	echo "Start package releasecode"
-	time_start1=$(date "+%Y-%m-%d %H:%M:%S")
+	time_start_pack=$(date "+%Y-%m-%d %H:%M:%S")
 	cd ~
 	tar -zcvf $PACK_NAME.tar.gz $TARGET_BASE
-	time_end1=$(date "+%Y-%m-%d %H:%M:%S")
-	time1=$(($(date +%s -d "${time_end1}")-$(date +%s -d "${time_start1}")));
-	result1=$(calculate $time1)
-	echo "package success!##### $result1 #####"
+	time_end_pack=$(date "+%Y-%m-%d %H:%M:%S")
+	time_pack=$(($(date +%s -d "${time_end_pack}")-$(date +%s -d "${time_start_pack}")));
+	result_pack=$(calculate $time_pack)
+	echo "package success!##### $result_pack #####"
+	time_total=$(($(date +%s -d "${time_end_pack}")-$(date +%s -d "${time_start}")));
+	result_total=$(calculate $time_total)
+	echo "##### total spend time:$result_total #####"
 }
 
 while true;do
@@ -196,7 +208,12 @@ while true;do
 		  Update
 		  break;;
 		N|n|NO|no)
-		  echo -n "Please mark copy bonlaway.tar.gz and datalib.tar.gz in $MAKESOURCE/device/mediatek/common/device.mk "
+		  #echo -n "Please mark copy bonlaway.tar.gz and datalib.tar.gz in $MAKESOURCE/device/mediatek/common/device.mk "
+		  sed -i 's\PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/bonlaway.tar.gz:system/etc/oem/bonlaway.tar.gz\#PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/bonlaway.tar.gz:system/etc/oem/bonlaway.tar.gz\g' $SOURCE/device/mediatek/common/device.mk
+		  sed -i 's\PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/datalib.tar.gz:system/etc/oem/datalib.tar.gz\#PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/datalib.tar.gz:system/etc/oem/datalib.tar.gz\g' $SOURCE/device/mediatek/common/device.mk
+		  Update
+		  sed -i 's\#PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/bonlaway.tar.gz:system/etc/oem/bonlaway.tar.gz\PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/bonlaway.tar.gz:system/etc/oem/bonlaway.tar.gz\g' $SOURCE/device/mediatek/common/device.mk
+		  sed -i 's\#PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/datalib.tar.gz:system/etc/oem/datalib.tar.gz\PRODUCT_COPY_FILES += device/mediatek/mt8168/mpadlib/datalib.tar.gz:system/etc/oem/datalib.tar.gz\g' $SOURCE/device/mediatek/common/device.mk
 		  break;;
 	esac
 done
